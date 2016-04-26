@@ -6,7 +6,7 @@
 module Haskell.Api.Helpers (
   ApiOptions (..),
   ApiEff,
-  By (..),
+  QueryParam (..),
   defaultApiOptions,
   settings,
   defaultWreqOptions,
@@ -63,18 +63,18 @@ data ApiOptions = ApiOptions {
 
 
 
-class (Show a) => By a where
-  by :: a -> String
+class (Show a) => QueryParam a where
+  qp :: a -> (String, String)
 
 
 
-instance By (String, String) where
-  by (s,s') = s <> "=" <> s'
+instance QueryParam (String, String) where
+  qp (s,s') = (s, s')
 
 
 
-instance By (Text, Text) where
-  by (t,t') = T.unpack $ t <> ("=" :: Text) <> t'
+instance QueryParam (Text, Text) where
+  qp (t,t') = (T.unpack t, T.unpack t')
 
 
 
@@ -83,9 +83,9 @@ route url paths = intercalate "/" (url : paths)
 
 
 
-flattenParams :: [(String, String)] -> [String]
+flattenParams :: QueryParam qp => [qp] -> [String]
 flattenParams [] = []
-flattenParams params' = map (\(k, v) -> k <> "=" <> v) params'
+flattenParams params' = map (\par -> let (k,v) = qp par in k ++ "=" ++ v) params'
 
 
 
@@ -95,10 +95,8 @@ mkQueryString params' = "?" <> intercalate "&" params'
 
 
 
-routeQueryBy :: By by => String -> [String] -> [(String,String)] -> [by] -> String
-routeQueryBy url paths params' by' = route url paths <> mkQueryString (by'' <> flattenParams params')
-  where
-  by'' = map show by'
+routeQueryBy :: QueryParam qp => String -> [String] -> [qp] -> String
+routeQueryBy url paths params' = route url paths <> mkQueryString (flattenParams params')
 
 
 
@@ -185,52 +183,52 @@ fixOpts params' = do
 
 
 
-getAt :: By by => [(String, String)] -> [by] -> [String] -> ApiEff (Either Status ByteString)
-getAt params' by' paths = do
+getAt :: QueryParam qp  => [qp] -> [String] -> ApiEff (Either Status ByteString)
+getAt params' paths = do
 
-  opts <- fixOpts params'
+  opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params' by'
+  let url' = routeQueryBy url paths params'
   runDebug (log ("getAt: " <> url'))
   r <- liftIO $ getWith opts url'
   properResponse r
 
 
 
-postAt :: (By by, WreqTypes.Postable a) => [(String, String)] -> [by] -> [String] -> a -> ApiEff (Either Status ByteString)
-postAt params' by' paths body = do
+postAt :: (QueryParam qp, WreqTypes.Postable a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+postAt params' paths body = do
 
-  opts <- fixOpts params'
+  opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params' by'
+  let url' = routeQueryBy url paths params'
   runDebug (log ("postAt: " <> url'))
   r <- liftIO $ postWith opts url' body
   properResponse r
 
 
 
-putAt :: (By by, WreqTypes.Putable a) => [(String, String)] -> [by] -> [String] -> a -> ApiEff (Either Status ByteString)
-putAt params' by' paths body = do
+putAt :: (QueryParam qp, WreqTypes.Putable a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+putAt params' paths body = do
 
-  opts <- fixOpts params'
+  opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params' by'
+  let url' = routeQueryBy url paths params'
   runDebug (log ("putAt: " <> url'))
   r <- liftIO $ putWith opts url' body
   properResponse r
 
 
 
-deleteAt :: By by => [(String, String)] -> [by] -> [String] -> ApiEff (Either Status ByteString)
-deleteAt params' by' paths = do
+deleteAt :: QueryParam qp => [qp] -> [String] -> ApiEff (Either Status ByteString)
+deleteAt params' paths = do
 
-  opts <- fixOpts params'
+  opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params' by'
+  let url' = routeQueryBy url paths params'
   runDebug (log ("deleteAt: " <> url'))
   r <- liftIO $ deleteWith opts url'
   properResponse r
