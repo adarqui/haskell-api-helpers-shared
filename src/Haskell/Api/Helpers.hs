@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE ExplicitForAll    #-}
 
 module Haskell.Api.Helpers (
   ApiOptions (..),
@@ -193,7 +194,9 @@ fixOpts params' = do
 
 
 
-handleError :: FromJSON a => Either Status ByteString -> Either ApiError a
+handleError ::
+  (FromJSON a)
+  => Either Status ByteString -> Either ApiError a
 handleError (Left status) = Left $ ServerError status
 handleError (Right bs)    =
   case eitherDecode bs of
@@ -202,7 +205,7 @@ handleError (Right bs)    =
 
 
 
-getAt :: QueryParam qp  => [qp] -> [String] -> ApiEff (Either Status ByteString)
+getAt :: (QueryParam qp)  => [qp] -> [String] -> ApiEff (Either Status ByteString)
 getAt params' paths = do
 
   opts <- fixOpts $ map qp params'
@@ -215,7 +218,7 @@ getAt params' paths = do
 
 
 
-postAt :: (QueryParam qp, WreqTypes.Postable a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+postAt :: (QueryParam qp, ToJSON a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
 postAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
@@ -223,12 +226,12 @@ postAt params' paths body = do
 
   let url' = routeQueryBy url paths params'
   runDebug (log ("postAt: " <> url'))
-  r <- liftIO $ postWith opts url' body
+  r <- liftIO $ postWith opts url' (toJSON body)
   properResponse r
 
 
 
-putAt :: (QueryParam qp, WreqTypes.Putable a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+putAt :: (QueryParam qp, ToJSON a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
 putAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
@@ -236,7 +239,7 @@ putAt params' paths body = do
 
   let url' = routeQueryBy url paths params'
   runDebug (log ("putAt: " <> url'))
-  r <- liftIO $ putWith opts url' body
+  r <- liftIO $ putWith opts url' (toJSON body)
   properResponse r
 
 
