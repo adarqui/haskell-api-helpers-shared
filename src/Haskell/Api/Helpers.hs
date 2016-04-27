@@ -5,6 +5,7 @@
 
 module Haskell.Api.Helpers (
   ApiOptions (..),
+  ApiError (..),
   ApiEff,
   QueryParam (..),
   defaultApiOptions,
@@ -16,6 +17,7 @@ module Haskell.Api.Helpers (
   routeQueryBy,
   runDebug,
   urlFromReader,
+  handleError,
   getAt,
   postAt,
   putAt,
@@ -30,6 +32,7 @@ module Haskell.Api.Helpers (
 import           Control.Lens
 import           Control.Monad.IO.Class
 import           Control.Monad.Trans.Reader
+import           Data.Aeson
 import qualified Data.ByteString.Char8      as BSC
 import           Data.ByteString.Lazy.Char8 (ByteString)
 import           Data.List                  (dropWhileEnd, intercalate)
@@ -60,6 +63,13 @@ data ApiOptions = ApiOptions {
   apiWreqOptions :: Options,
   apiDebug       :: Bool
 } deriving (Show, Generic, Typeable)
+
+
+
+data ApiError
+  = ServerError Status
+  | DecodeError String
+  deriving (Show)
 
 
 
@@ -180,6 +190,15 @@ fixOpts params' = do
     opts_with_params = Prelude.foldl (\acc (k, v) -> acc & param k .~ [v]) opts $ paramsToText params'
 
   return $ opts_with_params
+
+
+
+handleError :: FromJSON a => Either Status ByteString -> Either ApiError a
+handleError (Left status) = Left $ ServerError status
+handleError (Right bs)    =
+  case eitherDecode bs of
+    Left err -> Left $ DecodeError err
+    Right a  -> Right a
 
 
 
