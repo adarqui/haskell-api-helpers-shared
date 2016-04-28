@@ -24,8 +24,11 @@ module Haskell.Api.Helpers (
   putAt,
   deleteAt,
   runDefault,
+  rD,
   runWith,
-  runWithAuthId
+  rW,
+  runWithAuthId,
+  rWA
 ) where
 
 
@@ -161,13 +164,28 @@ runDefault actions = runReaderT actions defaultApiOptions
 
 
 
+rD :: ReaderT ApiOptions m a -> m a
+rD = runDefault
+
+
+
 runWith :: ReaderT ApiOptions m a -> ApiOptions -> m a
 runWith actions state = runReaderT actions state
 
 
 
+rW :: ReaderT ApiOptions m a -> ApiOptions -> m a
+rW = runWith
+
+
+
 runWithAuthId :: ReaderT ApiOptions m a -> String -> m a
 runWithAuthId actions string_id = runWith actions (defaultApiOptions { apiKey = Just $ BSC.pack string_id })
+
+
+
+rWA :: ReaderT ApiOptions m a -> String -> m a
+rWA = runWithAuthId
 
 
 
