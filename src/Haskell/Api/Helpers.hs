@@ -77,7 +77,7 @@ data ApiError
 
 
 
-class (Show a) => QueryParam a where
+class QueryParam a where
   qp :: a -> (String, String)
 
 
