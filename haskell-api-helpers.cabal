@@ -16,14 +16,14 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:     Haskell.Api.Helpers
-  build-depends:       base            >= 4.7 && < 5
+  build-depends:       base
                      , aeson
                      , bytestring
-                     , connection      >= 0.2.5
+                     , connection
                      , http-client
-                     , http-client-tls >= 0.2
-                     , http-conduit    >= 2.1.8
-                     , http-types      >= 0.9 && < 1.0
+                     , http-client-tls
+                     , http-conduit
+                     , http-types
                      , lens
                      , lens-aeson
                      , mtl
