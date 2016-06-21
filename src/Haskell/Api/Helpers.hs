@@ -1,8 +1,9 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE ExplicitForAll    #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE ExplicitForAll        #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 
 module Haskell.Api.Helpers (
   ApiOptions (..),
@@ -16,6 +17,7 @@ module Haskell.Api.Helpers (
   flattenParams,
   mkQueryString,
   routeQueryBy,
+  routeQueryBy',
   runDebug,
   urlFromReader,
   handleError,
@@ -33,23 +35,29 @@ module Haskell.Api.Helpers (
 
 
 
-import           Control.Lens
-import           Control.Monad.IO.Class
-import           Control.Monad.Trans.Reader
-import           Data.Aeson
-import qualified Data.ByteString.Char8      as BSC
+import           Control.Lens               ((&), (.~), (^.))
+import           Control.Monad.IO.Class     (MonadIO, liftIO)
+import           Control.Monad.Trans.Reader (ReaderT, ask, asks, runReaderT)
+import           Data.Aeson                 (FromJSON, ToJSON, eitherDecode,
+                                             toJSON)
+import qualified Data.ByteString.Char8      as BSC (ByteString)
 import           Data.ByteString.Lazy.Char8 (ByteString)
-import           Data.List                  (dropWhileEnd, intercalate)
 import           Data.Monoid                ((<>))
+import           Data.String.Conversions    (ConvertibleStrings, convertString)
 import           Data.Text                  (Text)
-import qualified Data.Text                  as T
+import qualified Data.Text                  as T (dropWhileEnd, intercalate)
 import           Data.Typeable              (Typeable)
 import           GHC.Generics               (Generic)
-import qualified Network.Connection         as Network
-import qualified Network.HTTP.Conduit       as Conduit
-import           Network.HTTP.Types.Header
-import           Network.Wreq
-import qualified Network.Wreq.Types         as WreqTypes
+import qualified Network.Connection         as Network (TLSSettings (..))
+import qualified Network.HTTP.Conduit       as Conduit (ManagerSettings,
+                                                        mkManagerSettings)
+import           Network.HTTP.Types.Header  (HeaderName)
+import           Network.Wreq               (Options, Response, Status,
+                                             defaults, deleteWith, getWith,
+                                             header, param, postWith, putWith,
+                                             responseBody, responseStatus,
+                                             statusCode)
+import qualified Network.Wreq.Types         as WreqTypes (Options (..), manager)
 import           Prelude                    hiding (log)
 
 
@@ -60,8 +68,8 @@ type ApiEff = ReaderT ApiOptions IO
 
 
 data ApiOptions = ApiOptions {
-  apiUrl         :: String,
-  apiPrefix      :: String,
+  apiUrl         :: Text,
+  apiPrefix      :: Text,
   apiKey         :: Maybe BSC.ByteString,
   apiKeyHeader   :: Maybe HeaderName,
   apiWreqOptions :: Options,
@@ -72,45 +80,50 @@ data ApiOptions = ApiOptions {
 
 data ApiError
   = ServerError Status
-  | DecodeError String
+  | DecodeError Text
   deriving (Show)
 
 
 
 class QueryParam a where
-  qp :: a -> (String, String)
-
-
-
-instance QueryParam (String, String) where
-  qp (s,s') = (s, s')
+  qp :: a -> (Text, Text)
 
 
 
 instance QueryParam (Text, Text) where
-  qp (t,t') = (T.unpack t, T.unpack t')
+  qp (t,t') = (t, t')
 
 
 
-route :: String -> [String] -> String
-route url paths = intercalate "/" (url : paths)
+cs :: Data.String.Conversions.ConvertibleStrings a b => a -> b
+cs = convertString
 
 
 
-flattenParams :: QueryParam qp => [qp] -> [String]
+route :: Text -> [Text] -> Text
+route url paths = T.intercalate "/" (url : paths)
+
+
+
+flattenParams :: QueryParam qp => [qp] -> [Text]
 flattenParams [] = []
-flattenParams params' = map (\par -> let (k,v) = qp par in k ++ "=" ++ v) params'
+flattenParams params' = map (\par -> let (k,v) = qp par in k <> "=" <> v) params'
 
 
 
-mkQueryString :: [String] -> String
+mkQueryString :: [Text] -> Text
 mkQueryString [] = ""
-mkQueryString params' = "?" <> intercalate "&" params'
+mkQueryString params' = "?" <> T.intercalate "&" params'
 
 
 
-routeQueryBy :: QueryParam qp => String -> [String] -> [qp] -> String
+routeQueryBy :: QueryParam qp => Text -> [Text] -> [qp] -> Text
 routeQueryBy url paths params' = route url paths <> mkQueryString (flattenParams params')
+
+
+
+routeQueryBy' :: QueryParam qp => Text -> [Text] -> [qp] -> String
+routeQueryBy' url paths params' = cs $ routeQueryBy url paths params'
 
 
 
@@ -125,12 +138,12 @@ runDebug fn = do
 
 
 
-urlFromReader :: ApiEff String
+urlFromReader :: ApiEff Text
 urlFromReader = do
   ApiOptions{..} <- ask
   let
-    apiUrl'    = dropWhileEnd (=='/') apiUrl
-    apiPrefix' = dropWhileEnd (=='/') apiPrefix
+    apiUrl'    = T.dropWhileEnd (=='/') apiUrl
+    apiPrefix' = T.dropWhileEnd (=='/') apiPrefix
   return $ apiUrl' <> "/" <> apiPrefix'
 
 
@@ -179,22 +192,22 @@ rW = runWith
 
 
 
-runWithAuthId :: ReaderT ApiOptions m a -> String -> m a
-runWithAuthId actions string_id = runWith actions (defaultApiOptions { apiKey = Just $ BSC.pack string_id })
+runWithAuthId :: ReaderT ApiOptions m a -> Text -> m a
+runWithAuthId actions string_id = runWith actions (defaultApiOptions { apiKey = Just $ cs string_id })
 
 
 
-rWA :: ReaderT ApiOptions m a -> String -> m a
+rWA :: ReaderT ApiOptions m a -> Text -> m a
 rWA = runWithAuthId
 
 
 
-paramsToText :: [(String, String)] -> [(Text, Text)]
-paramsToText = map (\(a,b) -> (T.pack a, T.pack b))
+-- paramsToText :: [(Text, Text)] -> [(Text, Text)]
+-- paramsToText = map (\(a,b) -> (cs a, cs b))
 
 
 
-fixOpts :: [(String, String)] -> ApiEff Options
+fixOpts :: [(Text, Text)] -> ApiEff Options
 fixOpts params' = do
 
   mapi_key <- asks apiKey
@@ -206,7 +219,7 @@ fixOpts params' = do
       (Just api_key, Just api_key_header) -> options' & header api_key_header .~ [api_key]
       _                                   -> options'
 
-    opts_with_params = Prelude.foldl (\acc (k, v) -> acc & param k .~ [v]) opts $ paramsToText params'
+    opts_with_params = Prelude.foldl (\acc (k, v) -> acc & param k .~ [v]) opts params'
 
   return $ opts_with_params
 
@@ -218,57 +231,57 @@ handleError ::
 handleError (Left status) = Left $ ServerError status
 handleError (Right bs)    =
   case eitherDecode bs of
-    Left err -> Left $ DecodeError err
+    Left err -> Left $ DecodeError $ cs err
     Right a  -> Right a
 
 
 
-getAt :: (QueryParam qp)  => [qp] -> [String] -> ApiEff (Either Status ByteString)
+getAt :: (QueryParam qp)  => [qp] -> [Text] -> ApiEff (Either Status ByteString)
 getAt params' paths = do
 
   opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params'
+  let url' = routeQueryBy' url paths params'
   runDebug (log ("getAt: " <> url'))
   r <- liftIO $ getWith opts url'
   properResponse r
 
 
 
-postAt :: (QueryParam qp, ToJSON a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+postAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff (Either Status ByteString)
 postAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params'
+  let url' = routeQueryBy' url paths params'
   runDebug (log ("postAt: " <> url'))
   r <- liftIO $ postWith opts url' (toJSON body)
   properResponse r
 
 
 
-putAt :: (QueryParam qp, ToJSON a) => [qp] -> [String] -> a -> ApiEff (Either Status ByteString)
+putAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff (Either Status ByteString)
 putAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params'
+  let url' = routeQueryBy' url paths params'
   runDebug (log ("putAt: " <> url'))
   r <- liftIO $ putWith opts url' (toJSON body)
   properResponse r
 
 
 
-deleteAt :: QueryParam qp => [qp] -> [String] -> ApiEff (Either Status ByteString)
+deleteAt :: QueryParam qp => [qp] -> [Text] -> ApiEff (Either Status ByteString)
 deleteAt params' paths = do
 
   opts <- fixOpts $ map qp params'
   url <- urlFromReader
 
-  let url' = routeQueryBy url paths params'
+  let url' = routeQueryBy' url paths params'
   runDebug (log ("deleteAt: " <> url'))
   r <- liftIO $ deleteWith opts url'
   properResponse r
