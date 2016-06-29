@@ -31,7 +31,7 @@ library
                      , text
                      , transformers
                      , wreq
-  ghc-options:         -Wall
+  ghc-options:         -Wall -Werror
   default-language:    Haskell2010
 
 test-suite haskell-api-helpers-test
