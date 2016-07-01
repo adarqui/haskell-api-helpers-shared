@@ -225,9 +225,7 @@ fixOpts params' = do
 
 
 
-handleError ::
-  (FromJSON a)
-  => Either Status ByteString -> Either ApiError a
+handleError :: (FromJSON a) => Either Status ByteString -> Either ApiError a
 handleError (Left status) = Left $ ServerError status
 handleError (Right bs)    =
   case eitherDecode bs of
