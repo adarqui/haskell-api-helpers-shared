@@ -133,8 +133,8 @@ runDebug fn = do
   if debug
      then do
        fn
-       return ()
-     else return ()
+       pure ()
+     else pure ()
 
 
 
@@ -144,7 +144,7 @@ urlFromReader = do
   let
     apiUrl'    = T.dropWhileEnd (=='/') apiUrl
     apiPrefix' = T.dropWhileEnd (=='/') apiPrefix
-  return $ apiUrl' <> "/" <> apiPrefix'
+  pure $ apiUrl' <> "/" <> apiPrefix'
 
 
 
@@ -221,7 +221,7 @@ fixOpts params' = do
 
     opts_with_params = Prelude.foldl (\acc (k, v) -> acc & param k .~ [v]) opts params'
 
-  return $ opts_with_params
+  pure $ opts_with_params
 
 
 
@@ -291,8 +291,8 @@ deleteAt params' paths = do
 properResponse :: Monad m => Response body -> m (Either Status body)
 properResponse r = do
   case (r ^. responseStatus ^. statusCode) of
-    200 -> return $ Right (r ^. responseBody)
-    _   -> return $ Left (r ^. responseStatus)
+    200 -> pure $ Right (r ^. responseBody)
+    _   -> pure $ Left (r ^. responseStatus)
 
 
 
