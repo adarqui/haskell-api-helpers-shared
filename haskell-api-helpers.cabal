@@ -20,6 +20,7 @@ library
                      , aeson
                      , bytestring
                      , connection
+                     , data-default
                      , http-client
                      , http-client-tls
                      , http-conduit

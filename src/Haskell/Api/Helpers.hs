@@ -1,6 +1,8 @@
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE ExplicitForAll        #-}
+{-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE KindSignatures        #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
@@ -9,6 +11,7 @@ module Haskell.Api.Helpers (
   ApiOptions (..),
   ApiError (..),
   ApiEff,
+  RawApiResult,
   QueryParam (..),
   defaultApiOptions,
   settings,
@@ -35,6 +38,7 @@ module Haskell.Api.Helpers (
 
 
 
+import           Control.Exception          (catch)
 import           Control.Lens               ((&), (.~), (^.))
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Trans.Reader (ReaderT, ask, asks, runReaderT)
@@ -42,16 +46,20 @@ import           Data.Aeson                 (FromJSON, ToJSON, eitherDecode,
                                              toJSON)
 import qualified Data.ByteString.Char8      as BSC (ByteString)
 import           Data.ByteString.Lazy.Char8 (ByteString)
+import           Data.Default
+import           Data.List                  (find)
 import           Data.Monoid                ((<>))
-import           Data.String.Conversions    (ConvertibleStrings, convertString)
+import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
 import qualified Data.Text                  as T (dropWhileEnd, intercalate)
 import           Data.Typeable              (Typeable)
 import           GHC.Generics               (Generic)
 import qualified Network.Connection         as Network (TLSSettings (..))
+import           Network.HTTP.Client        (HttpException (..))
 import qualified Network.HTTP.Conduit       as Conduit (ManagerSettings,
                                                         mkManagerSettings)
 import           Network.HTTP.Types.Header  (HeaderName)
+import           Network.HTTP.Types.Status  (status500, statusMessage)
 import           Network.Wreq               (Options, Response, Status,
                                              defaults, deleteWith, getWith,
                                              header, param, postWith, putWith,
@@ -63,7 +71,15 @@ import           Prelude                    hiding (log)
 
 
 
-type ApiEff = ReaderT ApiOptions IO
+type ApiEff       = ReaderT ApiOptions IO
+
+
+-- | Raw API Result, which can include an Error + Message, or the Response Body
+-- (Status, ByteString) is redundant because Status contains a statusMessage (ByteString).
+-- However, we are potentially pulling the response body from the content of the header: X-jSON-ERROR.
+-- This is because we don't have access to the body of the message in an exception.
+--
+type RawApiResult = Either (Status, ByteString) ByteString
 
 
 
@@ -78,8 +94,8 @@ data ApiOptions = ApiOptions {
 
 
 
-data ApiError
-  = ServerError Status
+data ApiError b
+  = ServerError Status b
   | DecodeError Text
   deriving (Show)
 
@@ -92,11 +108,6 @@ class QueryParam a where
 
 instance QueryParam (Text, Text) where
   qp (t,t') = (t, t')
-
-
-
-cs :: Data.String.Conversions.ConvertibleStrings a b => a -> b
-cs = convertString
 
 
 
@@ -162,12 +173,12 @@ defaultWreqOptions = defaults {
 
 defaultApiOptions :: ApiOptions
 defaultApiOptions = ApiOptions {
-  apiUrl = "https://github.com",
-  apiPrefix = "api",
-  apiKey = Nothing,
-  apiKeyHeader = Nothing,
+  apiUrl         = "https://github.com",
+  apiPrefix      = "api",
+  apiKey         = Nothing,
+  apiKeyHeader   = Nothing,
   apiWreqOptions = defaultWreqOptions,
-  apiDebug = True
+  apiDebug       = True
 }
 
 
@@ -202,11 +213,6 @@ rWA = runWithAuthId
 
 
 
--- paramsToText :: [(Text, Text)] -> [(Text, Text)]
--- paramsToText = map (\(a,b) -> (cs a, cs b))
-
-
-
 fixOpts :: [(Text, Text)] -> ApiEff Options
 fixOpts params' = do
 
@@ -225,8 +231,16 @@ fixOpts params' = do
 
 
 
-handleError :: (FromJSON a) => Either Status ByteString -> Either ApiError a
-handleError (Left status) = Left $ ServerError status
+_eitherDecode :: (FromJSON a, Default a) => ByteString -> a
+_eitherDecode bs =
+  case eitherDecode bs of
+    Left _  -> def
+    Right v -> v
+
+
+
+handleError :: (FromJSON a, FromJSON b, Default b) => Either (Status, ByteString) ByteString -> Either (ApiError b) a
+handleError (Left (status, body)) = Left $ ServerError status (_eitherDecode body)
 handleError (Right bs)    =
   case eitherDecode bs of
     Left err -> Left $ DecodeError $ cs err
@@ -234,7 +248,35 @@ handleError (Right bs)    =
 
 
 
-getAt :: (QueryParam qp)  => [qp] -> [Text] -> ApiEff (Either Status ByteString)
+internalAction
+  :: forall (m :: * -> *).
+     (MonadIO m)
+  => IO (Response ByteString)
+  -> m (Either (Status, ByteString) ByteString)
+internalAction act = liftIO ((act >>= properResponse) `catch` handler)
+  where
+  handler (StatusCodeException s headers _) = do
+     -- This basically makes this library specific to my ln-* project.
+     -- It looks for the X-jSON-ERROR header, and if it is set, returns
+     -- that message. This message may then be a JSON string, which can give us
+     -- more detailed error information.
+     --
+     case find ((==) "X-jSON-ERROR" . fst) headers of
+       Nothing        -> pure $ Left (s, cs $ statusMessage s)
+       Just (_, body) -> pure $ Left (s, cs body)
+  handler _                                 = pure $ Left (status500, "wreq")
+
+
+
+properResponse :: Monad m => Response body -> m (Either (Status, body) body)
+properResponse r = do
+  case (r ^. responseStatus ^. statusCode) of
+    200 -> pure $ Right (r ^. responseBody)
+    _   -> pure $ Left ((r ^. responseStatus), (r ^. responseBody))
+
+
+
+getAt :: (QueryParam qp)  => [qp] -> [Text] -> ApiEff RawApiResult
 getAt params' paths = do
 
   opts <- fixOpts $ map qp params'
@@ -242,12 +284,11 @@ getAt params' paths = do
 
   let url' = routeQueryBy' url paths params'
   runDebug (log ("getAt: " <> url'))
-  r <- liftIO $ getWith opts url'
-  properResponse r
+  internalAction $ getWith opts url'
 
 
 
-postAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff (Either Status ByteString)
+postAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff RawApiResult
 postAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
@@ -255,12 +296,11 @@ postAt params' paths body = do
 
   let url' = routeQueryBy' url paths params'
   runDebug (log ("postAt: " <> url'))
-  r <- liftIO $ postWith opts url' (toJSON body)
-  properResponse r
+  internalAction $ postWith opts url' (toJSON body)
 
 
 
-putAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff (Either Status ByteString)
+putAt :: (QueryParam qp, ToJSON a) => [qp] -> [Text] -> a -> ApiEff RawApiResult
 putAt params' paths body = do
 
   opts <- fixOpts $ map qp params'
@@ -268,12 +308,11 @@ putAt params' paths body = do
 
   let url' = routeQueryBy' url paths params'
   runDebug (log ("putAt: " <> url'))
-  r <- liftIO $ putWith opts url' (toJSON body)
-  properResponse r
+  internalAction $ putWith opts url' (toJSON body)
 
 
 
-deleteAt :: QueryParam qp => [qp] -> [Text] -> ApiEff (Either Status ByteString)
+deleteAt :: QueryParam qp => [qp] -> [Text] -> ApiEff RawApiResult
 deleteAt params' paths = do
 
   opts <- fixOpts $ map qp params'
@@ -281,16 +320,7 @@ deleteAt params' paths = do
 
   let url' = routeQueryBy' url paths params'
   runDebug (log ("deleteAt: " <> url'))
-  r <- liftIO $ deleteWith opts url'
-  properResponse r
-
-
-
-properResponse :: Monad m => Response body -> m (Either Status body)
-properResponse r = do
-  case (r ^. responseStatus ^. statusCode) of
-    200 -> pure $ Right (r ^. responseBody)
-    _   -> pure $ Left (r ^. responseStatus)
+  internalAction $ deleteWith opts url'
 
 
 
