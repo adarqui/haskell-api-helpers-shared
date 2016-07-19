@@ -51,7 +51,7 @@ import           Data.List                  (find)
 import           Data.Monoid                ((<>))
 import           Data.String.Conversions    (cs)
 import           Data.Text                  (Text)
-import qualified Data.Text                  as T (dropWhileEnd, intercalate)
+import qualified Data.Text                  as Text (dropWhileEnd, intercalate)
 import           Data.Typeable              (Typeable)
 import           GHC.Generics               (Generic)
 import qualified Network.Connection         as Network (TLSSettings (..))
@@ -112,7 +112,7 @@ instance QueryParam (Text, Text) where
 
 
 route :: Text -> [Text] -> Text
-route url paths = T.intercalate "/" (url : paths)
+route url paths = Text.intercalate "/" (url : paths)
 
 
 
@@ -124,7 +124,7 @@ flattenParams params' = map (\par -> let (k,v) = qp par in k <> "=" <> v) params
 
 mkQueryString :: [Text] -> Text
 mkQueryString [] = ""
-mkQueryString params' = "?" <> T.intercalate "&" params'
+mkQueryString params' = "?" <> Text.intercalate "&" params'
 
 
 
@@ -153,8 +153,8 @@ urlFromReader :: ApiEff Text
 urlFromReader = do
   ApiOptions{..} <- ask
   let
-    apiUrl'    = T.dropWhileEnd (=='/') apiUrl
-    apiPrefix' = T.dropWhileEnd (=='/') apiPrefix
+    apiUrl'    = Text.dropWhileEnd (=='/') apiUrl
+    apiPrefix' = Text.dropWhileEnd (=='/') apiPrefix
   pure $ apiUrl' <> "/" <> apiPrefix'
 
 
