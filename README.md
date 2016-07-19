@@ -1,12 +1,3 @@
-# haskell-api-helpers
+# haskell-api-helpers-shared
 
-Some api helpers.
-
-
-## Misc
-
-```
-:set -XOverloadedStrings
-let opts = ApiOptions "https://localhost" "api" (Just "1") (Just "z-authorization") defaultWreqOptions True
-runWith (getAt ([("key","value")] :: [(String,String)]) []) opts
-```
+Types/Instances shared between the other haskell-api- libraries.
