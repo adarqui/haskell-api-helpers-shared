@@ -239,7 +239,7 @@ _eitherDecode bs =
 
 
 
-handleError :: (FromJSON a, FromJSON b, Default b) => Either (Status, ByteString) ByteString -> Either (ApiError b) a
+handleError :: (FromJSON a, FromJSON b, Default b) => RawApiResult -> Either (ApiError b) a
 handleError (Left (status, body)) = Left $ ServerError status (_eitherDecode body)
 handleError (Right bs)    =
   case eitherDecode bs of
@@ -252,7 +252,7 @@ internalAction
   :: forall (m :: * -> *).
      (MonadIO m)
   => IO (Response ByteString)
-  -> m (Either (Status, ByteString) ByteString)
+  -> m RawApiResult
 internalAction act = liftIO ((act >>= properResponse) `catch` handler)
   where
   handler (StatusCodeException s headers _) = do
@@ -268,7 +268,7 @@ internalAction act = liftIO ((act >>= properResponse) `catch` handler)
 
 
 
-properResponse :: Monad m => Response body -> m (Either (Status, body) body)
+properResponse :: Monad m => Response ByteString -> m RawApiResult
 properResponse r = do
   case (r ^. responseStatus ^. statusCode) of
     200 -> pure $ Right (r ^. responseBody)
