@@ -1,3 +1,3 @@
 # haskell-api-helpers-shared
 
-Types/Instances shared between the other haskell-api- libraries.
+Code shared between the other haskell-api- & ln-api- libraries.

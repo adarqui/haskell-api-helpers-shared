@@ -1,8 +1,8 @@
-name:                haskell-api-helpers
+name:                haskell-api-helpers-shared
 version:             0.1.0.1
 synopsis:            Some API helpers I need
 description:         Please see README.md
-homepage:            https://github.com/adarqui/haskell-api-helpers#readme
+homepage:            https://github.com/adarqui/haskell-api-helpers-shared#readme
 license:             MIT
 license-file:        LICENSE
 author:              Andrew Darqui
@@ -15,7 +15,7 @@ cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Haskell.Api.Helpers
+  exposed-modules:     Haskell.Api.Helpers.Shared
   build-depends:       base
                      , aeson
                      , bytestring
@@ -40,10 +40,10 @@ test-suite haskell-api-helpers-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   build-depends:       base
-                     , haskell-api-helpers
+                     , haskell-api-helpers-shared
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
 source-repository head
   type:     git
-  location: https://github.com/adarqui/haskell-api-helpers
+  location: https://github.com/adarqui/haskell-api-helpers-shared
