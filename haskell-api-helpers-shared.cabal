@@ -20,6 +20,7 @@ library
                      , aeson
                      , bytestring
                      , data-default
+                     , deepseq
                      , http-types
                      , mtl
                      , string-conversions

@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE ExplicitForAll        #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -33,6 +34,7 @@ module Haskell.Api.Helpers.Shared (
 
 
 
+import           Control.DeepSeq            (NFData)
 import           Control.Monad.IO.Class     (MonadIO, liftIO)
 import           Control.Monad.Trans.Reader (ReaderT, ask, asks, runReaderT)
 import qualified Data.ByteString.Char8      as BSC (ByteString)
@@ -70,7 +72,7 @@ data ApiOptions options = ApiOptions {
   apiKeyHeader :: Maybe HeaderName,
   apiOptions   :: options,
   apiDebug     :: Bool
-} deriving (Show, Generic, Typeable)
+} deriving (Show, Generic, Typeable, NFData)
 
 instance Default options => Default (ApiOptions options) where
   def = defaultApiOptions
