@@ -146,7 +146,7 @@ urlFromReader = do
 
 defaultApiOptions :: Default options => ApiOptions options
 defaultApiOptions = ApiOptions {
-  apiUrl         = "https://github.com",
+  apiUrl         = "/",
   apiPrefix      = "api",
   apiKey         = Nothing,
   apiKeyHeader   = Nothing,
